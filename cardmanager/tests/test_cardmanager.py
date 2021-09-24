@@ -9,7 +9,7 @@ class TestCardManager(TestCase):
     def setUp(self):
         self.wdir = make_tmp_dir()
         self.addCleanup(os.rmdir, self.wdir)
-        self.cardfile = "./tests/example_card.txt"
+        self.cardfile = "./cardmanager/tests/example_card.txt"
         self.cm = CardManager(self.cardfile, ".")
 
     def test_reformat(self):
