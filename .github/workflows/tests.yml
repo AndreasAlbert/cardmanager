@@ -1,0 +1,39 @@
+
+name: tests
+#Running tests on all branches
+on: [push,pull_request]
+
+jobs:
+  # This is a job for linux python3 tests
+  linuxpy3:
+      runs-on: [ubuntu-20.04]
+      steps:
+        - uses: actions/checkout@v2
+
+        # Install dependencies
+        - name: Install python dependencies
+          run: |
+            curl https://bootstrap.pypa.io/get-pip.py > get-pip.py
+            python3 get-pip.py
+
+        - name: Install this package
+          run: |
+            python3 -m pip install -e .
+
+        # Run black code formatter
+        - name: black
+          run: |
+            black --check cardmanager
+
+        # Run pytest
+        - name: pytest
+          run: |
+            pip install pytest-cov
+            python3 -m pytest --cov=cardmanager/
+
+        - name: Upload coverage data to coveralls.io
+          run: |
+            python -m pip install coveralls==2.2
+            coveralls --service=github
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
