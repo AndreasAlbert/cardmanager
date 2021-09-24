@@ -12,5 +12,5 @@ setup(
     description = 'Sane tool for editing combine cards',
     packages = find_packages(),    
     install_requires = requirements,
-    scripts=[],
+    scripts=["./scripts/cardmanage"],
 )
