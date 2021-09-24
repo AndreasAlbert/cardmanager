@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-from cardmanager import CardManager
+import os
+import sys
+
 import click
+from cardmanager import CardManager
+from cardmanager.util import compare_cards
 
 
 @click.group()
 def cli():
     pass
 
-@cli.command()
+
+@cli.command(help='Format a data card without changing its functional content.')
 @click.argument("path")
-@click.option("-i","--in-place", default=False)
-@click.option("-o","--output", default=None)
-def format(path:str, in_place:bool, output:str):
+@click.option("-i", "--in-place", is_flag=True, help='Performs formatting in place, and overwrites the input card.')
+@click.option("-o", "--output", default=None, help='Output file name to write formatted card to.')
+def format(path: str, in_place: bool, output: str):
     if not (in_place or output) or (in_place and output):
         raise RuntimeError("Please provide *either* -i *or* -o!")
 
@@ -21,6 +26,19 @@ def format(path:str, in_place:bool, output:str):
         outfile = output
     cm = CardManager(path, ".")
     cm.write(outfile)
+
+@cli.command(help='Compare two data cards, ignoring formatting. Will exit with code 0 if the cards are equivalent, otherwise the exit code will be 1.')
+@click.argument("path1")
+@click.argument("path2")
+def compare(path1: str, path2: str):
+    assert os.path.exists(path1)
+    assert os.path.exists(path2)
+    cards_equivalent = compare_cards(path1, path2)
+    if not cards_equivalent:
+        print("Cards are not equivalent!")
+        sys.exit(1)
+    print("Cards are equivalent.")
+
 
 if __name__ == "__main__":
     cli()
