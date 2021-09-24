@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 import os
 import re
 from tabulate import tabulate
@@ -8,191 +9,268 @@ def line_insert(line, position, addition):
     parts.insert(position, addition)
     return " ".join(parts)
 
+@dataclass
+class Process():
+    id: int
+    name: str
+
+    def __eq__(self, other):
+        return self.id==other.id and self.name==other.name
+
+    def __hash__(self):
+        return hash(self.id)
+
+@dataclass
+class Nuisance():
+    name: str
+    type: str
+
+    effects: 'dict[str : float]'
+
+    def get_nuisance_effect(self,process_name: str, region_name: str)->float:
+        return self.effects[(process_name, region_name)]
+
+    def affects_process(self, process_name, region_name=None):
+        if region_name is None:
+            return any([process_name in key for key in self.effects.keys()])
+        else:
+            return (process_name, region_name) in self.effects
+    
+
+@dataclass 
+class NuisanceCollection():
+    nuisances : 'dict[str:Nuisance]'
+
+    def get_nuisance_effect(nuisance_name : str, process_name : str, region_name: str) -> float:
+        self.nuisances[nuisance_name].get_nuisance_effect(process_name, region_name)
+    
+    def add_nuisance(self,nuisance:Nuisance) -> None:
+        if nuisance.name in self.nuisances:
+            raise KeyError(f"Cannot insert duplicate nuisance name: {nuisance.name}")
+        self.nuisances[nuisance.name] = nuisance
+
+    def __getitem__(self,key:str)->Nuisance:
+        return self.nuisances[key]
+
+    def keys(self):
+        return self.nuisances.keys()
+
+
+@dataclass
+class CardFormat():
+    """
+    This class handles all operations related to the specific layout
+    of combine data cards. Each card follows the following format 
+    of consecutive blocks of lines:
+
+    0 - header block    (contains imax, jmax, kmax, possible annotations)
+    ---- separator       (line consisting exclusively of hyphens)
+    1 - shape block      (contains definitions of shape histograms)
+    ---- separator
+    2 - bin block       (contains definitions of bins)
+    ---- separator
+    3 - process block   (Definition of what processes are present in what regions)
+    ---- separator
+    4 - nuisance block  (Definition of which nuisance affects what process where)
+    5 - param block     (Definition of additional parameters, rename statements, etc)
+    """
+
+    def __post_init__(self):
+        self.block_names = ['header', 'shape', 'bin', 'process', 'nuisance', 'param']
+
+    def block_counter_to_name(self,block_counter:int)->str:
+        return self.block_names[block_counter]
+
+    def _is_separator_line(self, line: str)->bool:
+        return  bool(re.match('[\-, ]*$', line))
+
+    def _find_separator_lines(self, lines)->'list[int]':
+        return [index for index, line in enumerate(lines) if self._is_separator_line(line)]
+
+    def _find_first_line_of_param_block(self, lines: 'list[str]')->int:
+        previous_line_length = 0
+        for index, line in enumerate(lines):
+            line_length = len(line.split())
+            if previous_line_length > line_length:
+                return index
+            previous_line_length = line_length
+        raise RuntimeError("Could not find separation between nuisance and param blocks!")
+
+    def _remap_keys_counter_to_name(self, blocks):
+        return {self.block_counter_to_name(key): value for key, value in blocks.items()}
+
+    def _split_lines_by_separators(self, lines):
+        separator_line_indices = self._find_separator_lines(lines)
+        
+        blocks = []
+        for block_counter in range(len(separator_line_indices)+1):
+            
+            line_index_start = 0
+            if block_counter>0:
+                line_index_start = separator_line_indices[block_counter-1] + 1
+            line_index_stop = separator_line_indices[block_counter]
+
+            block = lines[line_index_start:line_index_stop]
+            blocks.append(block)
+
+
+    def lines_to_blocks(self,lines:'list[str]', key_is_name=False) -> 'dict':
+        '''
+        Format data card lines into blocks.
+
+        The lines should contain all lines from the data card, including all blocks
+        and separators.
+
+        Separator lines will be dropped, and will not show up in the blocks.
+
+        Results are returned as a dictionary, where the key is either the 
+        block index or the block name (if key_is_name is provided). For each
+        key, the value is a list of lines (strings).
+        '''
+
+        blocks = {}
+
+        # A card should always contain exactly four separator lines
+        separator_line_indices = self._find_separator_lines(lines)
+        assert(len(separator_line_indices) == 4)
+
+        # The first four blocks are all separated by separators
+        # so we split exactly at the separator, and drop the separator lines
+        for block_counter in range(0,4):
+            line_index_start = 0
+            if block_counter>0:
+                line_index_start = separator_line_indices[block_counter-1] + 1
+            line_index_stop = separator_line_indices[block_counter]
+
+            blocks[block_counter] = lines[line_index_start:line_index_stop]
+
+        # Blocks five and six are not separated by a separator
+        # Leftover lines are scanned to dynamically find theb boundary
+        # and then split accordingly.
+        last_separator_index = separator_line_indices[-1]
+        leftover_lines = lines[last_separator_index+1:]
+
+
+        first_line_of_param = self._find_first_line_of_param_block(leftover_lines)
+
+        block_counter += 1
+        blocks[block_counter] = leftover_lines[:first_line_of_param]
+
+        block_counter += 1
+        blocks[block_counter] = leftover_lines[first_line_of_param:]
+
+        if key_is_name:
+            blocks = self._remap_keys_counter_to_name(blocks)
+
+        return dict(blocks)
+
+    def _generate_separator(self):
+        return "-" * 20
+
+    def _tabulate(self,lines):
+        text = tabulate([line.split() for line in lines], tablefmt='plain')
+        return text
+
+    def format_lines_header_block(self, blocks, separators=True):
+        lines = blocks['header']
+        if separators:
+            lines.append(self._generate_separator())
+        return lines
+
+    def format_lines_shape_bin_blocks(self, blocks, separators=True):
+        lines = []
+        # Blocks 1 and 2 are table-formatted independently
+        for block_name in ['shape', 'bin']:
+            table = self._tabulate(blocks[block_name])
+            lines.extend(table.splitlines())
+            if separators:
+                lines.append(self._generate_separator())
+        return lines
+    
+    def format_lines_process_nuisance_blocks(self, blocks, separators=True):
+
+        # Blocks 3 and 4 are table formatted together
+        # Block 4 has the additional nuisance type identifier (e.g. "lnN"),
+        # so we add a dummy entry in block 3 to preserve column formatting
+
+        process_block = blocks['process']
+        nuisance_block = blocks['nuisance']
+        for i in range(len(process_block)):
+            parts = process_block[i].split()
+            parts.insert(1,'DUMMY')
+            process_block[i] = " ".join(parts)
+
+        merged_block = process_block + nuisance_block
+        text = self._tabulate(merged_block)
+        text = text.replace("DUMMY","     ")
+        lines = text.splitlines()
+
+        if separators:
+            lines.insert(len(process_block), self._generate_separator())
+            lines.append(self._generate_separator())
+        return lines
+
+    def format_lines_param_block(self, blocks):
+        return self._tabulate(blocks['param']).splitlines()
+
+    def blocks_to_lines(self, blocks, separators=True, index_is_name=True):
+        # Re-assemble the blocks
+        if not index_is_name:
+            blocks = self._remap_keys_counter_to_name(blocks)
+
+        lines = self.format_lines_header_block(blocks, separators)
+        lines.extend(self.format_lines_shape_bin_blocks(blocks, separators))
+        lines.extend(self.format_lines_process_nuisance_blocks(blocks, separators))
+        lines.extend(self.format_lines_param_block(blocks))
+        return lines
+
 class CardManager():
     def __init__(self, infile, wsdir):
         self.infile = infile
         self.wsdir = wsdir
+        self.processes = []
+        self.blocks = []
+        self.nuisances = NuisanceCollection([])
+        self.format = CardFormat()
         self.reset()
+
+    def _read_lines_from_file(self, filepath:str)->None:
+        with open(filepath) as f:
+            lines = [x.strip() for x in f.readlines()]
+        return lines
+
+    def _update_blocks_from_lines(self, lines):
+        self.blocks = self.format.lines_to_blocks(lines, key_is_name=True)
+
+    def get_lines(self, separators=True):
+        return self.format.blocks_to_lines(self.blocks, separators)
 
     def reset(self):
         '''
         Reset the in-memory version of the card to the source state.
         '''
-        with open(self.infile) as f:
-            self.lines = [x.strip() for x in f.readlines()]
+        lines = self._read_lines_from_file(self.infile)
+        self._update_blocks_from_lines(lines)
+        self.processes = self._parse_processes_in_card()
+        self.nuisances = NuisanceCollection(self._parse_nuisances_in_card())
 
-        # Adjust the ROOT file paths
-        # First, find all paths to be replaced
-        rootfiles = []
-        for line in self.lines:
-            if not line.startswith("shapes"):
-                continue
-            rootfiles.append(line.split()[3])
+    def _parse_processes_in_card(self) -> 'list[Process]':
+        """Get list of unique existing processes"""
+        process_name_list = self.blocks['process'][1]
+        process_id_list = self.blocks['process'][2]
 
-        # Second, replace the paths
-        for rf in set(rootfiles):
-            abspath = os.path.join(self.wsdir, os.path.basename(rf))
-            self.lines = [x.replace(" "+rf, " "+abspath) for x in self.lines]
-        
+        processes = []
+        for name, id in zip(process_name_list, process_id_list):
+            processes.append(Process(id=id, name=name))
+        return list(set(processes))
 
+    def _process_region_pairs(self):
+        pairs = list(zip(
+            self.blocks['process'][1].split()[1:],
+            self.blocks['process'][0].split()[1:]
+        ))
 
-    def replace_signals(self, signal_procs, srcprocs = ['vbf','ggzh','zh','wh','ggh']):
-        '''
-        Rewrites the card to accomodate change of signal procs.
-
-        It is assumed that the inital card has a known set of signal processes.
-        Unneeded processes are dropped (if you add fewer procs than you start out with).
-
-        IMPORTANT: nuisances are not changed and new proces inherit the nuisances of the old proc!
-        '''
-
-        # First stop: rename initial signal processes
-        # to new names given in signal_procs
-        newlines = []
-        for line in self.lines:
-            for iproc in range(len(signal_procs)):
-                # Try to preserve whitespace as well as we can
-                whitespace = len(signal_procs[iproc]) - len(srcprocs[iproc])
-                line = re.sub(f"{srcprocs[iproc]} {{,{whitespace}}}",signal_procs[iproc], line)
-            newlines.append(line)
-        self.lines = newlines
-
-        # Mute unneeded procs
-        for iproc in range(len(signal_procs), len(srcprocs)):
-            self.drop_proc(srcprocs[iproc])
-
-    def drop_unc_by_regex(self, regex):
-        blocks = self.blocks()
-        regex_compiled = re.compile(regex)
-        blocks[4] = list(filter(lambda x: not regex_compiled.match(x.split()[0]),blocks[4]))
-        self.from_blocks(blocks)
-
-    def add_proc(self, proc, region, number, wsfile, wsstring, uncertainties={}):
-        blocks = self.blocks()
-
-
-        # Adjust jmax if process does not already exist
-        if not any([proc==x for x in blocks[3][1].split()]):
-            parts = blocks[0][2].split()
-            assert(parts[0] == 'jmax')
-            parts[1] = str(int(parts[1])+1)
-            blocks[0][2] = " ".join(parts)
-
-        
-        # Block 1: Add shapes line
-        blocks[1].append(f"shapes {proc} {region} {wsfile} {wsstring}")
-
-        # Block 3: Add proc name, proc number, rate
-        blocks[3][0] = line_insert(blocks[3][0], 1, region)
-        blocks[3][1] = line_insert(blocks[3][1], 1, proc)
-        blocks[3][2] = line_insert(blocks[3][2], 1, str(number))
-        blocks[3][3] = line_insert(blocks[3][3], 1, "-1")
-
-        # Block 4: Adjust uncertainties
-        found_uncs = set()
-        ncols = len(blocks[4][0])
-        lastline = None
-
-        # First step: Write lines for existing nuisances
-        for iline, line in enumerate(blocks[4]):
-            if line.split()[1] in ["lnN","shape"]:
-                lastline = iline
-            else:
-                continue
-            
-            unc = line.split()[0]
-            if unc in uncertainties:
-                unctype, uncval = uncertainties[unc]
-                assert(unctype==line.split()[1])
-                uncstring = str(uncval)
-                found_uncs.add(unc)
-            else:
-                uncstring = "-"
-
-            blocks[4][iline] = line_insert(line, 2, uncstring)
-        
-        # Second step: Add new nuisance lines if necessary
-        for unc in set(map(str,uncertainties.keys()))-found_uncs:
-            unctype, uncval = uncertainties[unc]
-            blocks[4].insert(lastline, f"{unc} {unctype} {uncval}" + (ncols-2) * " -")
-            lastline += 1
-
-        # Finally: Reassemble the lines
-        self.from_blocks(blocks)
-
-    def drop_proc(self, proc):
-        '''
-        Removes a process from the data card.
-
-        Useful to e.g. drop specific signal processes.
-        '''
-
-        lines_to_drop = []
-        columns_to_drop = []
-        
-        # Step 1: find out which columns and lines to drop
-        block = 0
-        for i, line in enumerate(self.lines):
-            if re.match('[\-, ]*$', line):
-                block += 1
-                continue
-            if re.match('#.*', line):
-                continue
-            if block == 1:
-                parts = line.split()
-                try:
-                    assert(parts[0]=="shapes") 
-                except AssertionError:
-                    print("Found unexpected tag, expected 'shapes': " + parts[0] )
-                iproc = parts[1]
-
-                if iproc==proc or re.match(proc, iproc):
-                    lines_to_drop.append(i)
-            elif block == 3:
-                if not line.startswith("process"):
-                    continue
-                parts = line.split()
-                for ipart, part in enumerate(parts):
-                    if part == proc or re.match(proc, part):
-                        columns_to_drop.append(ipart)
-
-        # Step 2: drop the lines
-        for i in reversed(sorted(list(set(lines_to_drop)))):
-            self.lines.pop(i)
-        
-        # Step 3: drop the columns:
-        block = 0
-        lines = []
-        for i, line in enumerate(self.lines):
-            if re.match('[\-, ]*$', line):
-                block += 1
-                lines.append(line)
-                continue
-            if block in [3,4]:
-                parts = line.split()
-                if parts[0] not in ['bin','process','rate'] and parts[1] not in ['shape','lnN']:
-                    lines.append(line)
-                    continue
-                for icol in reversed(sorted(list(set(columns_to_drop)))):
-                    parts.pop(icol if block==3 else icol+1)
-                line = " ".join(parts)
-            lines.append(line)
-
-        # Adjust number of processes
-        parts = lines[2].split()
-        assert(parts[0] == 'jmax')
-        parts[1] = str(int(parts[1])-1)
-        lines[2] = " ".join(parts)
-        self.lines = lines
-    
-    def sub(self, pattern, substitute):
-        self.lines = [re.sub(pattern, substitute, line) for line in self.lines]
-
-    def add_line(self, line, block=-1):
-        '''Adds a line to the end of the card.'''
-        blocks = self.blocks()
-        blocks[block].append(line)
-        self.from_blocks(blocks)
+        return pairs
 
     def from_blocks(self, blocks):
         lines = []
@@ -200,63 +278,49 @@ class CardManager():
             lines.extend(tmp)
             lines.append('-'*20)
         self.lines = lines
+        self._update_blocks()
 
-    def blocks(self):
-        '''Format lines into blocks'''
-        block = 0
-        blocks = []
-        for i, line in enumerate(self.lines):
-            if re.match('[\-, ]*$', line):
-                block += 1
-                continue
-            if block < len(blocks):
-                blocks[block].append(line)
-            else:
-                blocks.append([line])
-        return blocks
+    def _parse_nuisances_in_card(self):
+        """
+        Creates Nuisance objects from the nuisance block information.
+
+        The nuisance block 
+        """
+
+        bins = self.blocks['process'][0].split()[1:]
+        process_names = self.blocks['process'][1].split()[1:]
+
+        nuisances = {}
+        for nuisance_line in  self.blocks['nuisance']:
+            line_entries = nuisance_line.split()
+
+            nuisance_name = line_entries[0]
+            nuisance_type = line_entries[1]
+            nuisance_values = line_entries[2:]
+
+            nuisance_effects = {(process_name, bin_name) : nuisance_value for process_name, bin_name, nuisance_value in zip(nuisance_values, bins, process_names)}
+
+            nuisance = Nuisance(
+                name=nuisance_name,
+                type=nuisance_type,
+                effects=nuisance_effects
+            )
+            nuisances[nuisance_name] = nuisance
+        return nuisances
+    
+    def _rewrite_nuisance_block(self):
+        new_block = []
+        for nuisance in self.nuisances:
+            split_line = [nuisance.name, nuisance.type]
+            for process, region in self._processes_pairs():
+                split_line.append(nuisance.get_effect(process, region))
+            new_block.append(new_block)
+        self.blocks['nuisance'] = new_block
+
+        self.from_blocks(blocks)
 
     def write(self, outfile):
         '''Writes the data card to a text file.'''
-        # For formatting, disassemble the card into blocks
-        blocks = self.blocks()
-
-        # Re-assemble the blocks
-        separator = "-" * 20
-
-        # Remove nuisance number
-        parts = blocks[0][3].split()
-        assert(parts[0] == 'kmax')
-        parts[1] = "*"
-        blocks[0][3] = " ".join(parts)
-
+        formatted_lines = self.format.blocks_to_lines(self.blocks, separators=True)
         with open(outfile, "w") as f:
-            # Block 0 does not formatting
-            f.write("\n".join(blocks[0])+"\n")
-            f.write(separator + "\n")
-
-            # Blocks 1 and 2 are table-formatted independently
-            for i in [1,2]:
-                f.write(tabulate([x.split() for x in blocks[i]], tablefmt='plain')+"\n")
-                f.write(separator + "\n")
-
-            # Blocks 3 and 4 are table formatted together
-            # Block 4 has the additional nuisance type identifier (e.g. "lnN"),
-            # so we add a dummy entry in block 3 to preserve column formatting
-            for i in range(len(blocks[3])):
-                parts = blocks[3][i].split()
-                parts.insert(1,'DUMMY')
-                blocks[3][i] = " ".join(parts)
-            
-            # Apply table formatting to merged 3+4
-            tmp = tabulate([x.split() for x in blocks[3]+blocks[4]], tablefmt='plain').split('\n')
-
-            # Insert separator
-            tmp.insert(4, separator)
-
-            # Remove dummy column entry and write
-            f.write("\n".join(tmp).replace("DUMMY","     ")+"\n")
-
-            # # Block 5 does not get special formatting
-            # f.write("\n".join(blocks[5])+"\n")
-
-
+            f.write("\n".join(formatted_lines))
