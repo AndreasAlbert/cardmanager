@@ -121,24 +121,36 @@ class CardFormat:
             "Could not find separation between nuisance and param blocks!"
         )
 
-    def _remap_keys_counter_to_name(self, blocks):
+    def _remap_keys_counter_to_name(
+        self, blocks: "dict[str:list[list[str]]]"
+    ) -> "dict[str:list[list[str]]]":
         return {self.block_counter_to_name(key): value for key, value in blocks.items()}
 
-    def _split_lines_by_separators(self, lines):
+    def _split_lines_by_separators(self, lines: "list[str]") -> "list[list[str]]":
+        """
+        Subdivides a list of lines into raw blocks based on separator line locations.
+
+        The separator lines are dropped in the process.
+        """
         separator_line_indices = self._find_separator_lines(lines)
 
         blocks = []
         for block_counter in range(len(separator_line_indices) + 1):
-
             line_index_start = 0
             if block_counter > 0:
                 line_index_start = separator_line_indices[block_counter - 1] + 1
-            line_index_stop = separator_line_indices[block_counter]
+            if block_counter >= len(separator_line_indices):
+                line_index_stop = len(lines)
+            else:
+                line_index_stop = separator_line_indices[block_counter]
 
             block = lines[line_index_start:line_index_stop]
             blocks.append(block)
+        return blocks
 
-    def lines_to_blocks(self, lines: "list[str]", key_is_name=False) -> "dict":
+    def lines_to_blocks(
+        self, lines: "list[str]", key_is_name=False
+    ) -> "dict[str:list[list[str]]":
         """
         Format data card lines into blocks.
 
@@ -154,53 +166,56 @@ class CardFormat:
 
         blocks = {}
 
-        # A card should always contain exactly four separator lines
-        separator_line_indices = self._find_separator_lines(lines)
-        assert len(separator_line_indices) == 4
+        # Every card should have five sets of lines split by separators
+        raw_blocks = self._split_lines_by_separators(lines)
+        assert len(raw_blocks) == 5
 
-        # The first four blocks are all separated by separators
-        # so we split exactly at the separator, and drop the separator lines
-        for block_counter in range(0, 4):
-            line_index_start = 0
-            if block_counter > 0:
-                line_index_start = separator_line_indices[block_counter - 1] + 1
-            line_index_stop = separator_line_indices[block_counter]
+        # The first four of those five are the blocks we care about
+        for block_counter in range(4):
+            blocks[block_counter] = raw_blocks[block_counter]
 
-            blocks[block_counter] = lines[line_index_start:line_index_stop]
-
-        # Blocks five and six are not separated by a separator
-        # Leftover lines are scanned to dynamically find theb boundary
+        # The fifth set of lines contains the blocks five and six,
+        # which are not separated by a separator line in the format.
+        # Leftover lines are scanned to dynamically find the boundary
         # and then split accordingly.
-        last_separator_index = separator_line_indices[-1]
-        leftover_lines = lines[last_separator_index + 1 :]
-
-        first_line_of_param = self._find_first_line_of_param_block(leftover_lines)
+        first_line_of_param_block = self._find_first_line_of_param_block(raw_blocks[-1])
 
         block_counter += 1
-        blocks[block_counter] = leftover_lines[:first_line_of_param]
+        blocks[block_counter] = raw_blocks[-1][:first_line_of_param_block]
 
         block_counter += 1
-        blocks[block_counter] = leftover_lines[first_line_of_param:]
+        blocks[block_counter] = raw_blocks[-1][first_line_of_param_block:]
 
+        # Make sure we did not lose any lines
+        n_lines_raw = len(raw_blocks[-1])
+        n_lines_processed = len(blocks[block_counter]) + len(blocks[block_counter - 1])
+        assert n_lines_raw == n_lines_processed
+
+        # If desired, output dictionary has block names
+        # instead of int keys
         if key_is_name:
             blocks = self._remap_keys_counter_to_name(blocks)
 
         return dict(blocks)
 
-    def _generate_separator(self):
+    def _generate_separator(self) -> str:
         return "-" * 20
 
-    def _tabulate(self, lines):
+    def _tabulate(self, lines: "list[str]") -> str:
         text = tabulate([line.split() for line in lines], tablefmt="plain")
         return text
 
-    def format_lines_header_block(self, blocks, separators=True):
+    def format_lines_header_block(
+        self, blocks: "list[list[str]]", separators: bool = True
+    ) -> "list[str]":
         lines = blocks["header"]
         if separators:
             lines.append(self._generate_separator())
         return lines
 
-    def format_lines_shape_bin_blocks(self, blocks, separators=True):
+    def format_lines_shape_bin_blocks(
+        self, blocks: "list[list[str]]", separators: bool = True
+    ) -> "list[str]":
         lines = []
         # Blocks 1 and 2 are table-formatted independently
         for block_name in ["shape", "bin"]:
@@ -210,7 +225,9 @@ class CardFormat:
                 lines.append(self._generate_separator())
         return lines
 
-    def format_lines_process_nuisance_blocks(self, blocks, separators):
+    def format_lines_process_nuisance_blocks(
+        self, blocks: "list[list[str]]", separators: bool = True
+    ) -> "list[str]":
         process_block = blocks["process"].copy()
         nuisance_block = blocks["nuisance"].copy()
         for i in range(len(process_block)):
@@ -226,10 +243,12 @@ class CardFormat:
             lines.insert(len(process_block), self._generate_separator())
         return lines
 
-    def format_lines_param_block(self, blocks):
+    def format_lines_param_block(self, blocks: "list[list[str]]") -> "list[str]":
         return self._tabulate(blocks["param"]).splitlines()
 
-    def blocks_to_lines(self, blocks, separators=True, index_is_name=True):
+    def blocks_to_lines(
+        self, blocks, separators: bool = True, index_is_name: bool = True
+    ) -> "list[str]":
         # Re-assemble the blocks
         if not index_is_name:
             blocks = self._remap_keys_counter_to_name(blocks)
