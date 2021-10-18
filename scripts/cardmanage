@@ -24,7 +24,7 @@ def format(path: str, in_place: bool, output: str):
         outfile = path
     if output:
         outfile = output
-    cm = CardManager(path, ".")
+    cm = CardManager(path)
     cm.write(outfile)
 
 @cli.command(help='Compare two data cards, ignoring formatting. Will exit with code 0 if the cards are equivalent, otherwise the exit code will be 1.')

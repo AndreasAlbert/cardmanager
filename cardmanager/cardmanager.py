@@ -26,14 +26,24 @@ class Process:
 
 @dataclass
 class Nuisance:
+    """
+    Class that represents a single nuisance parameter.
+
+    Nuisance values are stored in a dictionary.
+
+    key = (process_name, region_name)
+    value = string data card entry
+    """
     name: str
     type: str
 
-    effects: "dict[str : float]"
+    effects: "dict[(str,str) : str]"
 
-    def get_nuisance_effect(self, process_name: str, region_name: str) -> float:
-        value = self.effects[(process_name, region_name)]
-        return value
+    def get_nuisance_effect(self, process_name: str, region_name: str) -> str:
+        try:
+            return self.effects[(process_name, region_name)]
+        except KeyError:
+            return "-"
 
     def set_nuisance_effect(
         self, process_name: str, region_name: str, effect: float
@@ -69,6 +79,11 @@ class NuisanceCollection:
         if nuisance.name in self.nuisances:
             raise KeyError(f"Cannot insert duplicate nuisance name: {nuisance.name}")
         self.nuisances[nuisance.name] = nuisance
+
+    def remove_nuisance(self, nuisance_name: str) -> Nuisance:
+        if not nuisance_name in self.nuisances:
+            raise KeyError(f"Cannot remove nonexisting nuisance name: {nuisance.name}")
+        return self.nuisances.pop(nuisance_name)
 
     def __getitem__(self, key: str) -> Nuisance:
         return self.nuisances[key]
@@ -259,11 +274,9 @@ class CardFormat:
         lines.extend(self.format_lines_param_block(blocks))
         return lines
 
-
 class CardManager:
-    def __init__(self, infile, wsdir):
+    def __init__(self, infile):
         self.infile = infile
-        self.wsdir = wsdir
         self.processes = []
         self.blocks = []
         self.nuisances = NuisanceCollection([])
@@ -356,5 +369,33 @@ class CardManager:
     def write(self, outfile):
         """Writes the data card to a text file."""
         formatted_lines = self.format.blocks_to_lines(self.blocks, separators=True)
+
+        outdir = os.path.dirname(outfile)
+
+        try:
+            os.makedirs(outdir)
+        except FileExistsError:
+            pass
+
         with open(outfile, "w") as f:
             f.write("\n".join(formatted_lines))
+
+
+    def make_file_paths_absolute(self):
+        """
+        Modify references to workspace files inside the card to make them absolute paths.
+        """
+        file_names = []
+        lines = []
+
+        parent = os.path.dirname(self.infile)
+        def make_abs_if_file(string):
+            if string.endswith(".root"):
+                if string.startswith("/"):
+                    return string
+                return os.path.abspath(os.path.join(parent, string))
+            return string
+
+        for iline, line in enumerate(self.blocks["shape"]):
+            self.blocks["shape"][iline] = " ".join([make_abs_if_file(x) for x in line.split()])
+
