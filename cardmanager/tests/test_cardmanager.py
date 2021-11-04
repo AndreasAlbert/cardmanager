@@ -10,7 +10,7 @@ class TestCardManager(TestCase):
         self.wdir = make_tmp_dir()
         self.addCleanup(os.rmdir, self.wdir)
         self.cardfile = "./cardmanager/tests/example_card.txt"
-        self.cm = CardManager(self.cardfile, ".")
+        self.cm = CardManager(self.cardfile)
 
     def test_reformat(self):
         outfile = os.path.join(self.wdir, "output.txt")

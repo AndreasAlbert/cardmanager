@@ -420,7 +420,7 @@ class CardManager:
 
     def write(self, outfile, copy_workspaces=False):
         """Writes the data card to a text file."""
-        blocks = copy.deepcopy(self.blocks)
+        blocks = self.blocks.copy()
 
         outdir = os.path.dirname(outfile)
         if copy_workspaces:
