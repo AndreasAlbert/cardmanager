@@ -424,7 +424,7 @@ class CardManager:
 
         outdir = os.path.dirname(outfile)
         if copy_workspaces:
-            self._copy_workspace_files(blocks, outdir)
+            self.copy_workspace_files(blocks, outdir)
             blocks = self.make_file_paths_basic(blocks)
 
         formatted_lines = self.format.blocks_to_lines(blocks, separators=True)

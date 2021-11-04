@@ -32,7 +32,7 @@ def format(path: str, in_place: bool, output: str):
 @click.argument("target_path")
 @click.option("-r", "--recursive", help="Copy not just the card, but also the workspace files mentioned in the card.", is_flag=True)
 def copy(source_path:str, target_path:str, recursive: bool):
-    cm = CardManager(path)
+    cm = CardManager(source_path)
 
     if os.path.isdir(target_path):
         target_path = os.path.join(target_path, os.path.basename(source_path))
