@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -34,6 +35,7 @@ class Nuisance:
     key = (process_name, region_name)
     value = string data card entry
     """
+
     name: str
     type: str
 
@@ -274,6 +276,7 @@ class CardFormat:
         lines.extend(self.format_lines_param_block(blocks))
         return lines
 
+
 class CardManager:
     def __init__(self, infile):
         self.infile = infile
@@ -366,11 +369,65 @@ class CardManager:
             new_block.append(" ".join(map(str, split_line)))
         self.blocks["nuisance"] = new_block
 
-    def write(self, outfile):
+    def get_workspace_file_paths(self, blocks=None):
+        if not blocks:
+            blocks = self.blocks
+
+        file_paths = set()
+        for line in blocks["shape"]:
+            for entry in line.split():
+                entry = re.sub(":.*", "", entry)
+                if not entry.endswith(".root"):
+                    continue
+                file_paths.add(entry)
+        return list(file_paths)
+
+    def make_file_paths_basic(self, blocks=None, inplace: bool = False) -> dict:
+        """
+        Modify references to workspace files inside the card to naming just the file base name.
+
+        Example: Replace "/path/to/file.root" with "file.root".
+        """
+        if not blocks:
+            blocks = self.blocks
+
+        for file_path in self.get_workspace_file_paths(blocks):
+            for iline, line in enumerate(blocks["shape"]):
+                blocks["shape"][iline] = line.replace(
+                    file_path, os.path.basename(file_path)
+                )
+
+        if inplace:
+            self.blocks = blocks
+
+        return blocks
+
+    def copy_workspace_files(self, blocks: dict, target_directory: str) -> None:
+        """
+        Copies the workspace files referenced in the data card blocks to the target directory.
+        """
+        source_paths = self.get_workspace_file_paths(blocks)
+
+        base_names_seen = set()
+        for ipath in source_paths:
+            base_name = os.path.basename(ipath)
+            assert (
+                not base_name in base_names_seen
+            ), f"Clash of workspace base names: {base_name}"
+            base_names_seen.add(base_name)
+            target_path = os.path.join(target_directory, base_name)
+            shutil.copyfile(ipath, target_path)
+
+    def write(self, outfile, copy_workspaces=False):
         """Writes the data card to a text file."""
-        formatted_lines = self.format.blocks_to_lines(self.blocks, separators=True)
+        blocks = self.blocks.copy()
 
         outdir = os.path.dirname(outfile)
+        if copy_workspaces:
+            self.copy_workspace_files(blocks, outdir)
+            blocks = self.make_file_paths_basic(blocks)
+
+        formatted_lines = self.format.blocks_to_lines(blocks, separators=True)
 
         try:
             os.makedirs(outdir)
@@ -380,22 +437,29 @@ class CardManager:
         with open(outfile, "w") as f:
             f.write("\n".join(formatted_lines))
 
-
-    def make_file_paths_absolute(self):
+    def make_file_paths_absolute(self, blocks=None, inplace=False) -> None:
         """
         Modify references to workspace files inside the card to make them absolute paths.
         """
-        file_names = []
-        lines = []
+
+        if not blocks:
+            blocks = self.blocks
 
         parent = os.path.dirname(self.infile)
-        def make_abs_if_file(string):
+
+        def make_abs_if_file(string: str) -> str:
             if string.endswith(".root"):
                 if string.startswith("/"):
                     return string
                 return os.path.abspath(os.path.join(parent, string))
             return string
 
-        for iline, line in enumerate(self.blocks["shape"]):
-            self.blocks["shape"][iline] = " ".join([make_abs_if_file(x) for x in line.split()])
+        for iline, line in enumerate(blocks["shape"]):
+            blocks["shape"][iline] = " ".join(
+                [make_abs_if_file(x) for x in line.split()]
+            )
 
+        if inplace:
+            self.blocks = blocks
+
+        return blocks

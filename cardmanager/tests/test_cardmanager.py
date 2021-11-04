@@ -1,8 +1,8 @@
 import os
 from unittest import TestCase
 
-from cardmanager.util import make_tmp_dir, compare_cards
 from cardmanager import CardManager
+from cardmanager.util import compare_cards, make_tmp_dir
 
 
 class TestCardManager(TestCase):
@@ -10,7 +10,7 @@ class TestCardManager(TestCase):
         self.wdir = make_tmp_dir()
         self.addCleanup(os.rmdir, self.wdir)
         self.cardfile = "./cardmanager/tests/example_card.txt"
-        self.cm = CardManager(self.cardfile, ".")
+        self.cm = CardManager(self.cardfile)
 
     def test_reformat(self):
         outfile = os.path.join(self.wdir, "output.txt")
@@ -67,3 +67,37 @@ class TestCardManager(TestCase):
                 expected_value,
                 msg=f"Did not read right nuisance value for arguments: {args}",
             )
+
+    def test_get_workspace_file_paths(self):
+        """Test for CardManager.get_workspace_file_paths"""
+        file_paths = self.cm.get_workspace_file_paths()
+        self.assertEqual(len(file_paths), 1)
+        self.assertEqual(file_paths[0], "combined_model.root")
+
+    def make_file_paths_absolute(self):
+        """Test for CardManager.make_file_paths_absolute"""
+
+        self.cm.make_file_paths_absolute(inplace=True)
+        file_paths = self.cm.get_workspace_file_paths()
+        self.assertEqual(len(file_paths), 1)
+
+        root_path = os.path.abspath(os.path.dirname(self.cardfile))
+        target_value = os.path.join(root_path, "combined_model.root")
+
+        self.assertEqual(file_paths[0], target_value)
+
+    def make_file_paths_basic(self):
+        """
+        Test for CardManager.make_file_paths_basic
+
+        The test card starts out with basic paths.
+        Making the file paths basic should exactly
+        reverse the effect of making them absolute.
+        """
+
+        self.cm.make_file_paths_absolute(inplace=True)
+        self.cm.make_file_paths_basic(inplace=True)
+
+        file_paths = self.cm.get_workspace_file_paths()
+        self.assertEqual(len(file_paths), 1)
+        self.assertEqual(file_paths[0], "combined_model.root")
