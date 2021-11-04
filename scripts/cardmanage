@@ -27,6 +27,18 @@ def format(path: str, in_place: bool, output: str):
     cm = CardManager(path)
     cm.write(outfile)
 
+@cli.command(help="Copy a data card to a target location.")
+@click.argument("source_path")
+@click.argument("target_path")
+@click.option("-r", "--recursive", help="Copy not just the card, but also the workspace files mentioned in the card.", is_flag=True)
+def copy(source_path:str, target_path:str, recursive: bool):
+    cm = CardManager(path)
+
+    if os.path.isdir(target_path):
+        target_path = os.path.join(target_path, os.path.basename(source_path))
+
+    cm.write(target_path, copy_workspaces=recursive)
+
 @cli.command(help='Compare two data cards, ignoring formatting. Will exit with code 0 if the cards are equivalent, otherwise the exit code will be 1.')
 @click.argument("path1")
 @click.argument("path2")

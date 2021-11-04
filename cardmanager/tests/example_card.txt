@@ -22,7 +22,7 @@ shapes wjets                     monojet_@YEAR_singleel  combined_model.root com
 shapes *                         monojet_@YEAR_singlemu  combined_model.root combinedws:monojet_@YEAR_Wmn_$PROCESS combinedws:monojet_@YEAR_Wmn_$PROCESS_$SYSTEMATIC
 shapes data_obs                  monojet_@YEAR_singlemu  combined_model.root combinedws:monojet_@YEAR_Wmn_data
 shapes wjets                     monojet_@YEAR_singlemu  combined_model.root combinedws:monojet_@YEAR_singlemuon_wjets_model
-shapes qcd                       monojet_@YEAR_signal    monojet_qcd_ws.root category_monojet_@YEAR/wspace_monojet_@YEAR:qcd_monojet_@YEAR category_monojet_@YEAR/wspace_monojet_@YEAR:qcd_monojet_@YEAR_$SYSTEMATIC
+shapes qcd                       monojet_@YEAR_signal    combined_model.root category_monojet_@YEAR/wspace_monojet_@YEAR:qcd_monojet_@YEAR category_monojet_@YEAR/wspace_monojet_@YEAR:qcd_monojet_@YEAR_$SYSTEMATIC
 ----------------------------------------------------------------------------------------------------------------------------------
 bin           monojet_@YEAR_signal  monojet_@YEAR_dimuon  monojet_@YEAR_dielec  monojet_@YEAR_photon  monojet_@YEAR_singlemu  monojet_@YEAR_singleel
 observation  -1                    -1                    -1                    -1                    -1                      -1                  
