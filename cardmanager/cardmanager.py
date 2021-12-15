@@ -131,7 +131,7 @@ class CardFormat:
         previous_line_length = 0
         for index, line in enumerate(lines):
             line_length = len(line.split())
-            if previous_line_length > line_length:
+            if previous_line_length > line_length + 1:
                 return index
             previous_line_length = line_length
         raise RuntimeError(
@@ -252,9 +252,16 @@ class CardFormat:
             parts.insert(1, "DUMMY")
             process_block[i] = " ".join(parts)
 
+        for i in range(len(nuisance_block)):
+            parts = nuisance_block[i].split()
+            if parts[1] == "gmN":
+                parts[1] = f"{parts[1]}-{parts[2]}"
+                nuisance_block[i] = " ".join(parts[:2] + parts[3:])
+
         merged_block = process_block + nuisance_block
         text = self._tabulate(merged_block)
         text = text.replace("DUMMY", "     ")
+        text = text.replace("gmN-", "gmN ")
         lines = text.splitlines()
         if separators:
             lines.insert(len(process_block), self._generate_separator())
@@ -342,8 +349,11 @@ class CardManager:
 
             nuisance_name = line_entries[0]
             nuisance_type = line_entries[1]
-            nuisance_values = line_entries[2:]
-
+            if nuisance_type == "gmN":
+                nuisance_type = nuisance_type + "-" + line_entries[2]
+                nuisance_values = line_entries[3:]
+            else:
+                nuisance_values = line_entries[2:]
             nuisance_values = [0 if x == "-" else x for x in nuisance_values]
 
             nuisance_effects = {
@@ -362,7 +372,7 @@ class CardManager:
     def _rewrite_nuisance_block(self):
         new_block = []
         for nuisance in self.nuisances.nuisances.values():
-            split_line = [nuisance.name, nuisance.type]
+            split_line = [nuisance.name, nuisance.type.replace("-"," ")]
             for process, region in self._process_region_pairs():
                 effect = nuisance.get_nuisance_effect(process, region)
                 split_line.append("-" if effect == 0 else effect)
@@ -422,7 +432,7 @@ class CardManager:
         """Writes the data card to a text file."""
         blocks = self.blocks.copy()
 
-        outdir = os.path.dirname(outfile)
+        outdir = os.path.abspath(os.path.dirname(outfile))
         if copy_workspaces:
             self.copy_workspace_files(blocks, outdir)
             blocks = self.make_file_paths_basic(blocks)
