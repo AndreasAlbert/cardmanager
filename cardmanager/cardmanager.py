@@ -120,7 +120,7 @@ class CardFormat:
         return self.block_names[block_counter]
 
     def _is_separator_line(self, line: str) -> bool:
-        return bool(re.match("[-, ]*$", line))
+        return bool(re.match("[-, ]+$", line))
 
     def _find_separator_lines(self, lines) -> "list[int]":
         return [
